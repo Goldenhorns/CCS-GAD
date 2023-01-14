@@ -150,4 +150,3 @@ def random_adjacency_matrix(n):
             matrix[j][i] = matrix[i][j]
 
     return matrix
-
