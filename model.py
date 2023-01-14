@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
-
+from numpy import random
 class GCN(nn.Module):
     def __init__(self, in_ft, out_ft, act, bias=True):
         super(GCN, self).__init__()
@@ -45,7 +45,6 @@ class GraphConvolution(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
-
     def __init__(self, in_features, out_features, bias=True):
         super(GraphConvolution, self).__init__()
         self.in_features = in_features
@@ -120,9 +119,9 @@ class Structure_Decoder(nn.Module):
 
         return x
 
-class Dominant(nn.Module):
+class AE(nn.Module):
     def __init__(self, feat_size, hidden_size, dropout):
-        super(Dominant, self).__init__()
+        super(AE, self).__init__()
         
         self.shared_encoder = Encoder(feat_size, hidden_size, dropout)
         self.attr_decoder = Attribute_Decoder(feat_size, hidden_size, dropout)
@@ -137,3 +136,18 @@ class Dominant(nn.Module):
         struct_reconstructed = self.struct_decoder(x, adj)
         # return reconstructed matrices
         return struct_reconstructed, x_hat
+
+def random_adjacency_matrix(n):   
+    matrix = [[random.randint(0, 2) for i in range(n)] for j in range(n)]
+
+    # No vertex connects to itself
+    for i in range(n):
+        matrix[i][i] = 0
+
+    # If i is connected to j, j is connected to i
+    for i in range(n):
+        for j in range(n):
+            matrix[j][i] = matrix[i][j]
+
+    return matrix
+
