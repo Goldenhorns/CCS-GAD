@@ -41,6 +41,7 @@ class Solver_RCA_Multi:
         torch.cuda.manual_seed(seed)
 #endregion
 
+#region
         use_cuda = torch.cuda.is_available()
         self.data_name = data_name
         self.knn_impute = knn_impute
@@ -61,7 +62,7 @@ class Solver_RCA_Multi:
 
         os.makedirs(self.model_save_path, exist_ok=True)
         self.learning_rate = learning_rate
-        self.dataset = RealDataset(data_path, missing_ratio=self.missing_ratio)
+        self.dataset = RealDataset(data_path, missing_ratio=self.missing_ratio)#需要自己实现一下
         self.seed = seed
         self.start_ratio = start_ratio
 
@@ -107,11 +108,12 @@ class Solver_RCA_Multi:
         self.discriminator = None
         self.build_model()
         self.print_network()
+#endregion
 
     def build_model(self):
         self.ae = []
         for _ in range(self.n_member):
-            ae = SingleAE(
+            ae = AE(
                 input_dim=self.input_dim, hidden_dim=self.hidden_dim, z_dim=self.z_dim
             )
             ae = ae.to(self.device)
