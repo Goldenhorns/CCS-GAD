@@ -1,6 +1,6 @@
 import torch as torch
 import os
-
+import random
 import torch.utils.data as data
 import numpy as np
 from tqdm import tqdm
@@ -43,14 +43,18 @@ class Solver_graphRCA:
         self.beta = 0.0  # initially, select all data
         self.alpha = 0.5
         self.negsamp_round=1
-        self.dropout=0.01
+        self.subgraph_size=4
 
+        self.dropout=0.01
+        
+        self.batch_size=batch_size
         self.dataset = RealDataset(data_name)
         self.data_anomaly_ratio = self.dataset.truth.sum()/self.dataset.nb_nodes + oe
         self.data_normaly_ratio = 1 - self.data_anomaly_ratio
+        self.batch_num = self.dataset.nb_nodes // self.batch_size + 1
         self.input_dim = self.dataset.ft_size
         self.hidden_dim = hidden_dim
-
+        self.nb_nodes=self.dataset.nb_nodes
         n_sample = self.dataset.nb_nodes
         self.n_train = n_sample 
         self.n_test = n_sample 
@@ -82,58 +86,90 @@ class Solver_graphRCA:
             num_params += p.numel()
         print("The number of parameters: {}".format(num_params))
 
+    def loss_func(self,  adj, A_hat, attrs, X_hat, alpha):
+    # Attribute reconstruction loss
+        diff_attribute = torch.pow(X_hat - attrs, 2)
+        attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 2))
+        attribute_cost = torch.mean(attribute_reconstruction_errors)
+        # structure reconstruction loss
+        diff_structure = torch.pow(A_hat - adj, 2)
+        structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 2))
+        structure_cost = torch.mean(structure_reconstruction_errors)
+        cost =  alpha * attribute_reconstruction_errors + (1-alpha) * structure_reconstruction_errors
+        return cost
+
     def train(self):
+        
         optimizer = torch.optim.Adam(self.ae.parameters(), lr=self.learning_rate)
         self.ae.eval()
         loss_mse = torch.nn.MSELoss(reduction='none')
         if self.data_name == 'optdigits':
             loss_mse = torch.nn.BCELoss(reduction='none')
 
-        for epoch in tqdm(range(self.max_epochs)):  # train 3 time classifier
-            for i, (x, y) in enumerate(self.training_loader):
-                x = x.to(self.device).float()
-                n = x.shape[0]
-                n_selected = int(n * (1-self.beta))
+        with tqdm(total=self.max_epochs) as pbar:
+                pbar.set_description('Training')
+                for epoch in range(self.max_epochs):  # train 3 time classifier
+                    loss_full_batch = torch.zeros((self.nb_nodes,1))
+                    if torch.cuda.is_available():
+                        loss_full_batch = loss_full_batch.cuda()
+                    
+                    all_idx = list(range(self.dataset.nb_nodes))
+                    random.shuffle(all_idx)
+                    total_loss = 0.
+                    for batch_idx in range(self.batch_num):
+                        is_final_batch = (batch_idx == (self.batch_num - 1))
+                        if not is_final_batch:
+                            idx = all_idx[batch_idx * self.batch_size: (batch_idx + 1) * self. batch_size]
+                        else:
+                            idx = all_idx[batch_idx * self.batch_size:]
+                        cur_batch_size = len(idx)
+                        
+                        ba,bf,lbl=self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
+                        
+                        n = bf.shape[0]
+                        n_selected = int(n * (1-self.beta))
 
-                if config.coteaching == 0.0:
-                    n_selected = n
-                if i == 0:
-                    current_ratio = "{}/{}".format(n_selected, n)
+                        if self.coteaching == 0.0:
+                            n_selected = n
+                        if batch_idx == 0:
+                            current_ratio = "{}/{}".format(n_selected, n)
 
-                optimizer.zero_grad()
+                        optimizer.zero_grad()
 
-                with torch.no_grad():
-                    self.ae.eval()
-                    z1, z2, xhat1, xhat2 = self.ae(x.float(), x.float())
+                        with torch.no_grad():
+                            self.ae.eval()
+                            A_hat1, x_hat1,re1, \
+                            A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)
 
-                    error1 = loss_mse(xhat1, x)
-                    error1 = error1
-                    error2 = loss_mse(xhat2, x)
-                    error2 = error2
+                            error1= self.loss_func(ba, A_hat1, bf, x_hat1, 0.5)
+                            error2= self.loss_func(ba, A_hat2, bf, x_hat2, 0.5)
 
-                    error1 = error1.sum(dim=1)
-                    error2 = error2.sum(dim=1)
-                    _, index1 = torch.sort(error1)
-                    _, index2 = torch.sort(error2)
+                            error1 = error1.sum(dim=1)
+                            error1 = error2.sum(dim=1)
+                            _, index1 = torch.sort(error1) #index为原来的数据下标
+                            _, index2 = torch.sort(error2)
 
-                    index1 = index1[:n_selected]
-                    index2 = index2[:n_selected]
+                            index1 = index1[:n_selected]
+                            index2 = index2[:n_selected]
+                        pbar.update(1)
+'''
+                            x1 = x[index2, :]
+                            x2 = x[index1, :]
 
-                    x1 = x[index2, :]
-                    x2 = x[index1, :]
 
+                        self.ae.train()
+                        z1, z2, xhat1, xhat2 = self.ae(x1.float(), x2.float())
+                        loss = loss_mse(xhat1, x1) + loss_mse(xhat2, x2)
+                        loss = loss.sum()
+                        loss.backward()
+                        optimizer.step()
 
-                self.ae.train()
-                z1, z2, xhat1, xhat2 = self.ae(x1.float(), x2.float())
-                loss = loss_mse(xhat1, x1) + loss_mse(xhat2, x2)
-                loss = loss.sum()
-                loss.backward()
-                optimizer.step()
+                    if self.beta < self.data_anomaly_ratio:
+                        self.beta = min(
+                            self.data_anomaly_ratio, self.beta + self.decay_ratio
+                        )
+'''
 
-            if self.beta < self.data_anomaly_ratio:
-                self.beta = min(
-                    self.data_anomaly_ratio, self.beta + self.decay_ratio
-                )
 '''
     def test(self):
         print("======================TEST MODE======================")

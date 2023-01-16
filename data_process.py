@@ -54,6 +54,7 @@ class RealDataset():
         lbl = torch.unsqueeze(torch.cat((torch.ones(cur_batch_size), torch.zeros(cur_batch_size * negsamp_ratio))), 1)
         if torch.cuda.is_available():
             lbl = lbl.cuda()
+
             added_adj_zero_row = added_adj_zero_row.cuda()
             added_adj_zero_col = added_adj_zero_col.cuda()
             added_feat_zero_row = added_feat_zero_row.cuda()
@@ -64,8 +65,10 @@ class RealDataset():
             bf.append(cur_feat)
 
         ba = torch.cat(ba)
+        ba =  ba.cuda()
         ba = torch.cat((ba, added_adj_zero_row), dim=1)
         ba = torch.cat((ba, added_adj_zero_col), dim=2)
         bf = torch.cat(bf)
+        bf =  bf.cuda()
         bf = torch.cat((bf[:, :-1, :], added_feat_zero_row, bf[:, -1:, :]),dim=1)
         return ba,bf,lbl

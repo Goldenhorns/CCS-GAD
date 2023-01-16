@@ -19,12 +19,13 @@ args = parser.parse_args()
 #载入数据
 nmu=Solver_graphRCA(
         args.dataset,
-        hidden_dim=128,  # number of hidden neurons in RCA  
+        hidden_dim=4,  # number of hidden neurons in RCA  
         seed=0,  # random seed
         learning_rate=1e-3,  # learning rate
-        batch_size=128,  #  batchsize
+        batch_size=1000,  #  batchsize
         max_epochs=100,  #  training epochs
         coteaching=1.0,  #  whether selects sample based on loss value
         oe=0.0,  # how much we overestimate the ground-truth anomaly ratio
         #missing_ratio=0.0,  # missing ratio in the data
     )
+nmu.train()

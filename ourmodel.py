@@ -5,9 +5,9 @@ import math
 from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
 from numpy import random
-class GCN(nn.Module):
-    def __init__(self, in_ft, out_ft, act, bias=True):
-        super(GCN, self).__init__()
+class GraphConvolution(nn.Module):
+    def __init__(self, in_ft, out_ft, act='prelu', bias=True):
+        super(GraphConvolution, self).__init__()
         self.fc = nn.Linear(in_ft, out_ft, bias=False)
         self.act = nn.PReLU() if act == 'prelu' else act
         self.in_features = in_ft #add
@@ -41,7 +41,7 @@ class GCN(nn.Module):
             + str(self.in_features) + ' -> ' \
             + str(self.out_features) + ')'
 
-class GraphConvolution(Module):
+class GraphConvolution1(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
@@ -106,7 +106,8 @@ class Structure_Decoder(nn.Module):#结构解码
     def forward(self, x, adj):
         x = F.relu(self.gc1(x, adj))
         x = F.dropout(x, self.dropout, training=self.training)
-        x = x @ x.T
+        y=x.transpose(1,2)
+        x = x @ y  
         return x
 
 class AvgReadout(nn.Module):#取平均值
