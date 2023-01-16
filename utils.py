@@ -9,6 +9,20 @@ import dgl
 def split_line():
     print('-'*50)
 
+def random_adjacency_matrix(n):   
+    matrix = [[random.randint(0, 2) for i in range(n)] for j in range(n)]
+
+    # No vertex connects to itself
+    for i in range(n):
+        matrix[i][i] = 0
+
+    # If i is connected to j, j is connected to i
+    for i in range(n):
+        for j in range(n):
+            matrix[j][i] = matrix[i][j]
+
+    return matrix
+
 def normalize_adj(adj):#D^(-1/2)*A*D^(-1/2)
     """Symmetrically normalize adjacency matrix."""
     adj = sp.coo_matrix(adj)

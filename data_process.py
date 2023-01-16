@@ -27,7 +27,6 @@ class RealDataset():
         self.norm_feat = torch.FloatTensor(self.norm_feat[np.newaxis])
         self.norm_adj = torch.FloatTensor(self.norm_adj[np.newaxis])
         self.truth= torch.FloatTensor(self.truth[np.newaxis])
-    
 
     def docuda(self):
         if torch.cuda.is_available():
@@ -40,14 +39,33 @@ class RealDataset():
             split_line()
             print("Using CPU")
     
-    def node_sub(self,subgraph_size):
-        added_adj_zero_row = torch.zeros((self.nb_nodes, 1, subgraph_size))
-        added_adj_zero_col = torch.zeros((self.nb_nodes, subgraph_size + 1, 1))
-        added_adj_zero_col[:,-1,:] = 1.
-        added_feat_zero_row = torch.zeros((self.nb_nodes, 1, self.ft_size))
+    def get_babf(self,subgraph_size,idx,negsamp_ratio):
+        #所需数据准备
+        ba = []
+        bf = []
+        cur_batch_size = len(idx)
+        dgl_graph = adj_to_dgl_graph(self.adj)       
+        subgraphs = generate_rwr_subgraph(dgl_graph, subgraph_size)
+
+        added_adj_zero_row = torch.zeros((cur_batch_size, 1, subgraph_size))
+        added_adj_zero_col = torch.zeros((cur_batch_size, subgraph_size + 1, 1))
+        added_adj_zero_col[:, -1, :] = 1.
+        added_feat_zero_row = torch.zeros((cur_batch_size, 1, self.ft_size))
+        lbl = torch.unsqueeze(torch.cat((torch.ones(cur_batch_size), torch.zeros(cur_batch_size * negsamp_ratio))), 1)
         if torch.cuda.is_available():
+            lbl = lbl.cuda()
             added_adj_zero_row = added_adj_zero_row.cuda()
             added_adj_zero_col = added_adj_zero_col.cuda()
             added_feat_zero_row = added_feat_zero_row.cuda()
-        split_line()
-        print("Subgraph has produced")
+        for i in idx:
+            cur_adj = self.norm_adj[:, subgraphs[i], :][:, :, subgraphs[i]]
+            cur_feat = self.norm_feat[:, subgraphs[i], :]
+            ba.append(cur_adj)
+            bf.append(cur_feat)
+
+        ba = torch.cat(ba)
+        ba = torch.cat((ba, added_adj_zero_row), dim=1)
+        ba = torch.cat((ba, added_adj_zero_col), dim=2)
+        bf = torch.cat(bf)
+        bf = torch.cat((bf[:, :-1, :], added_feat_zero_row, bf[:, -1:, :]),dim=1)
+        return ba,bf,lbl
