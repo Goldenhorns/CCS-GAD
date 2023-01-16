@@ -150,7 +150,7 @@ class Discriminator(nn.Module):#求距离
 
 class SM(nn.Module):
     def __init__(self, feat_size, hidden_size,negsamp_round, dropout):
-        super(AE, self).__init__()
+        super(SM, self).__init__()
         
         self.encoder = Encoder(feat_size, hidden_size, dropout)
         self.attr_decoder = Attribute_Decoder(feat_size, hidden_size, dropout)

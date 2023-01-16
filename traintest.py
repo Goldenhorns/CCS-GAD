@@ -10,86 +10,60 @@ from ourmodel import AE
 from data_process import RealDataset
 
 
-class Solver_RCA:
+class Solver_graphRCA:
     def __init__(
         self,
         data_name,
         hidden_dim=128,  # number of hidden neurons in RCA
-        z_dim=10,  # bottleneck dimension
         seed=0,  # random seed
         learning_rate=1e-3,  # learning rate
         batch_size=128,  #  batchsize
-        training_ratio=0.8,  #  training data percentage
         max_epochs=100,  #  training epochs
         coteaching=1.0,  #  whether selects sample based on loss value
         oe=0.0,  # how much we overestimate the ground-truth anomaly ratio
-        missing_ratio=0.0,  # missing ratio in the data
+        #missing_ratio=0.0,  # missing ratio in the data
     ):
         # Data loader
         # read data here
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
-
         use_cuda = torch.cuda.is_available()
+
         self.data_name = data_name
         self.device = torch.device("cuda" if use_cuda else "cpu")
-        data_path = "./data/" + data_name + ".npy"
-        self.missing_ratio = missing_ratio
-        self.model_save_path = "./trained_model/{}/{}/RCA/{}/".format(
-            data_name, missing_ratio, seed
-        )
-        if oe == 0.0:
-            self.result_path = "./results/{}/{}/RCA/{}/".format(
-                data_name, missing_ratio, seed
-            )
-        else:
-            self.result_path = "./results/{}/{}/RCA_{}/{}/".format(
-                data_name, missing_ratio, oe, seed
-            )
+        #self.missing_ratio = missing_ratio
+        self.result_path = "./results/GraphRCA/{}/".format(
+                data_name)
 
-        os.makedirs(self.model_save_path, exist_ok=True)
         self.learning_rate = learning_rate
-        self.dataset = RealDataset(
-            data_path, missing_ratio=self.missing_ratio
-        )
         self.seed = seed
-        self.hidden_dim = hidden_dim
-        self.z_dim = z_dim
         self.max_epochs = max_epochs
         self.coteaching = coteaching
         self.beta = 0.0  # initially, select all data
         self.alpha = 0.5
-        self.data_path = data_path
+        self.negsamp_round=1
+        self.dropout=0.01
 
-        self.data_anomaly_ratio = self.dataset.__anomalyratio__() + oe
-
-        self.input_dim = self.dataset.__dim__()
+        self.dataset = RealDataset(data_name)
+        self.data_anomaly_ratio = self.dataset.truth.sum()/self.dataset.nb_nodes + oe
         self.data_normaly_ratio = 1 - self.data_anomaly_ratio
+        self.input_dim = self.dataset.ft_size
+        self.hidden_dim = hidden_dim
 
-        n_sample = self.dataset.__len__()
-        self.n_train = int(n_sample * (training_ratio))
-        self.n_test = n_sample - self.n_train
+        n_sample = self.dataset.nb_nodes
+        self.n_train = n_sample 
+        self.n_test = n_sample 
         print(
-            "|data dimension: {}|data noise ratio:{}".format(
-                self.dataset.__dim__(), self.data_anomaly_ratio
+            "{}| Data dimension: {}| Data noise ratio:{}".format(
+                self.data_name.upper(), self.input_dim, '%0.4f'%self.data_anomaly_ratio
             )
         )
 
         self.decay_ratio = abs(self.beta - (1 - self.data_anomaly_ratio)) / (
             self.max_epochs / 2
         )
-        training_data, testing_data = data.random_split(
-            dataset=self.dataset, lengths=[self.n_train, self.n_test]
-        )
-
-        self.training_loader = data.DataLoader(
-            training_data, batch_size=batch_size, shuffle=True
-        )
-
-        self.testing_loader = data.DataLoader(
-            testing_data, batch_size=self.n_test, shuffle=False
-        )
+        
         self.ae = None
         self.discriminator = None
         self.build_model()
@@ -97,7 +71,8 @@ class Solver_RCA:
 
     def build_model(self):
         self.ae = AE(
-            input_dim=self.input_dim, hidden_dim=self.hidden_dim, z_dim=self.z_dim
+            feat_size=self.input_dim, hidden_size=self.hidden_dim,
+            negsamp_round=self.negsamp_round, dropout=self.dropout
         )
         self.ae = self.ae.to(self.device)
 
@@ -159,7 +134,7 @@ class Solver_RCA:
                 self.beta = min(
                     self.data_anomaly_ratio, self.beta + self.decay_ratio
                 )
-
+'''
     def test(self):
         print("======================TEST MODE======================")
         self.ae.train()
@@ -216,4 +191,4 @@ class Solver_RCA:
         )
         print("result save to {}".format(self.result_path))
         return accuracy, precision, recall, f_score, auc
-
+'''
