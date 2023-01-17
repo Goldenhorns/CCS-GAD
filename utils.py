@@ -42,7 +42,7 @@ def load_data(dataset):
     adj = sp.csr_matrix(data_mat['Network'])
     feat = sp.lil_matrix(data_mat['Attributes'])
     truth = data_mat['Label']
-    truth = truth.flatten()
+    truth = np.squeeze(np.array(truth))
     return feat, truth, adj
 
 def sparse_to_tuple(sparse_mx, insert_batch=False):

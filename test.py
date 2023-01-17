@@ -1,5 +1,5 @@
 import torch
-x=torch.tensor([[2,3,4],[2,3,4],[2,3,5]])
-x1=torch.tensor([[2,3,4],[2,3,4],[2,3,4]])
-x3=torch.pow(x-x1,2)
-print(x3)
+x=torch.rand(10,3,3)
+inx=[0,9]
+print(x)
+print(x[inx,:,:])

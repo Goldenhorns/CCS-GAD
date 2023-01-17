@@ -25,6 +25,7 @@ class Solver_graphRCA:
     ):
         # Data loader
         # read data here
+        print("=========================Init=========================")
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
@@ -43,7 +44,7 @@ class Solver_graphRCA:
         self.beta = 0.0  # initially, select all data
         self.alpha = 0.5
         self.negsamp_round=1
-        self.subgraph_size=4
+        self.subgraph_size=2
 
         self.dropout=0.01
         
@@ -99,29 +100,29 @@ class Solver_graphRCA:
         return cost
 
     def train(self):
-        
+        print("======================Train MODE======================")
         optimizer = torch.optim.Adam(self.ae.parameters(), lr=self.learning_rate)
         self.ae.eval()
-        loss_mse = torch.nn.MSELoss(reduction='none')
-        if self.data_name == 'optdigits':
-            loss_mse = torch.nn.BCELoss(reduction='none')
-
+#region
+        #loss_mse = torch.nn.MSELoss(reduction='none')
+        #if self.data_name == 'optdigits':
+            #loss_mse = torch.nn.BCELoss(reduction='none')
+#endregion
         with tqdm(total=self.max_epochs) as pbar:
                 pbar.set_description('Training')
                 for epoch in range(self.max_epochs):  # train 3 time classifier
                     loss_full_batch = torch.zeros((self.nb_nodes,1))
                     if torch.cuda.is_available():
                         loss_full_batch = loss_full_batch.cuda()
-                    
                     all_idx = list(range(self.dataset.nb_nodes))
                     random.shuffle(all_idx)
                     total_loss = 0.
                     for batch_idx in range(self.batch_num):
                         is_final_batch = (batch_idx == (self.batch_num - 1))
                         if not is_final_batch:
-                            idx = all_idx[batch_idx * self.batch_size: (batch_idx + 1) * self. batch_size]
+                            idx = all_idx[batch_idx * self.batch_size: (batch_idx + 1) * self. batch_size]                            
                         else:
-                            idx = all_idx[batch_idx * self.batch_size:]
+                            idx = all_idx[batch_idx * self.batch_size:]                            
                         cur_batch_size = len(idx)
                         
                         ba,bf,lbl=self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
@@ -137,75 +138,104 @@ class Solver_graphRCA:
                         optimizer.zero_grad()
 
                         with torch.no_grad():
+
                             self.ae.eval()
                             A_hat1, x_hat1,re1, \
                             A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)
 
                             error1= self.loss_func(ba, A_hat1, bf, x_hat1, 0.5)
                             error2= self.loss_func(ba, A_hat2, bf, x_hat2, 0.5)
-
                             error1 = error1.sum(dim=1)
-                            error1 = error2.sum(dim=1)
+                            error2 = error2.sum(dim=1)
+
                             _, index1 = torch.sort(error1) #index为原来的数据下标
                             _, index2 = torch.sort(error2)
 
                             index1 = index1[:n_selected]
                             index2 = index2[:n_selected]
-                        pbar.update(1)
-'''
-                            x1 = x[index2, :]
-                            x2 = x[index1, :]
+    
+                            ba1=ba[index2,:,:]
+                            bf1=bf[index2,:,:]
+                            
+                            ba2=ba[index1,:,:]
+                            bf2=bf[index1,:,:]
 
+                        
 
                         self.ae.train()
-                        z1, z2, xhat1, xhat2 = self.ae(x1.float(), x2.float())
-                        loss = loss_mse(xhat1, x1) + loss_mse(xhat2, x2)
+                        A_hat1, x_hat1,re1, \
+                            A_hat2, x_hat2,ret2 = self.ae(bf1,ba1,bf2,ba2)
+
+                        loss = self.loss_func(ba1, A_hat1, bf1, x_hat1, 0.5) + self.loss_func(ba2, A_hat2, bf2, x_hat2, 0.5)
                         loss = loss.sum()
+                        mean_loss=loss/self.nb_nodes
+                        mean_loss =mean_loss.detach().cpu().numpy()
                         loss.backward()
                         optimizer.step()
 
+                        pbar.update(1)
+                        pbar.set_postfix(loss=mean_loss)
                     if self.beta < self.data_anomaly_ratio:
                         self.beta = min(
                             self.data_anomaly_ratio, self.beta + self.decay_ratio
                         )
-'''
 
-'''
+
     def test(self):
         print("======================TEST MODE======================")
         self.ae.train()
-        mse_loss = torch.nn.MSELoss(reduction='none')
-        if self.data_name == 'optdigits':
-            mse_loss = torch.nn.BCELoss(reduction='none')
 
-        error_list = []
-        for _ in range(1000):  # ensemble score over 100 stochastic feedforward
+        #mse_loss = torch.nn.MSELoss(reduction='none')
+        #if self.data_name == 'optdigits':
+            #mse_loss = torch.nn.BCELoss(reduction='none')
+        test_rounds=1
+        multi_round_ano_score = np.zeros((test_rounds, self.nb_nodes))
+
+        for round in range(test_rounds):  # ensemble score over 100 stochastic feedforward
             with torch.no_grad():
-                for _, (x, y) in enumerate(self.testing_loader):  # testing data loader has n_test batchsize, if it is image data, need change this part
-                    y = y.data.cpu().numpy()
-                    x = x.to(self.device).float()
-                    _, _, xhat1, xhat2 = self.ae(x.float(), x.float())
-                    error = mse_loss(xhat1, x) + mse_loss(xhat2, x)
+                all_idx = list(range(self.nb_nodes))
+                random.shuffle(all_idx)
+
+                for batch_idx in range(self.batch_num):# testing data loader has n_test batchsize, if it is image data, need change this part
+                    
+                    is_final_batch = (batch_idx == (self.batch_num - 1))
+
+                    if not is_final_batch:
+                        idx = all_idx[batch_idx * self.batch_size: (batch_idx + 1) *self. batch_size]
+                    else:
+                        idx = all_idx[batch_idx * self.batch_size:]
+
+                    ba,bf,lbl=self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
+
+                    A_hat1, x_hat1,re1, \
+                    A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)
+
+                    error1= self.loss_func(ba, A_hat1, bf, x_hat1, 0.5)
+                    error2= self.loss_func(ba, A_hat2, bf, x_hat2, 0.5)
+                    error=error1+error2
                     error = error.mean(dim=1)
-                error = error.data.cpu().numpy()
-                error_list.append(error)
-        error_list = np.array(error_list)
-        error = error_list.mean(axis=0)
+                    error = error.data.cpu().numpy()
+                    multi_round_ano_score[round, idx]=error
+                    print(batch_idx)
+            print(round)
+                        
+
+        y=self.dataset.truth
+        ano_score_final = np.mean(multi_round_ano_score, axis=0)
         from sklearn.metrics import (
             precision_recall_fscore_support as prf,
             accuracy_score,
             roc_auc_score,
         )
-        gt = y.astype(int)
 
-        thresh = np.percentile(error, self.dataset.__anomalyratio__() * 100)
+        thresh = np.percentile(ano_score_final, self.data_anomaly_ratio * 100)
         print("Threshold :", thresh)
-
-        pred = (error > thresh).astype(int)
-        gt = y.astype(int)
-        auc = roc_auc_score(gt, error)
-        accuracy = accuracy_score(gt, pred)
-        precision, recall, f_score, support = prf(gt, pred, average="binary")
+        print(ano_score_final.shape,y.shape)
+        pred = (ano_score_final > thresh).astype(int)
+    
+        auc = roc_auc_score(y, ano_score_final)
+        accuracy = accuracy_score(y, pred)
+        precision, recall, f_score, support = prf(y, pred, average="binary")
 
         print(
             "Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f}, AUC : {:0.4f}".format(
@@ -227,4 +257,3 @@ class Solver_graphRCA:
         )
         print("result save to {}".format(self.result_path))
         return accuracy, precision, recall, f_score, auc
-'''

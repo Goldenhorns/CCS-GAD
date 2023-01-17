@@ -26,7 +26,7 @@ class RealDataset():
         #转换成tensorfloat
         self.norm_feat = torch.FloatTensor(self.norm_feat[np.newaxis])
         self.norm_adj = torch.FloatTensor(self.norm_adj[np.newaxis])
-        self.truth= torch.FloatTensor(self.truth[np.newaxis])
+        
 
     def docuda(self):
         if torch.cuda.is_available():
