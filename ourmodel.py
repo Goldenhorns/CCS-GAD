@@ -10,8 +10,7 @@ class GraphConvolution(nn.Module):
         super(GraphConvolution, self).__init__()
         self.fc = nn.Linear(in_ft, out_ft, bias=False)
         self.act = nn.PReLU() if act == 'prelu' else act
-        self.in_features = in_ft #add
-        self.out_features = out_ft #add     
+        
         if bias:
             self.bias = nn.Parameter(torch.FloatTensor(out_ft))
             self.bias.data.fill_(0.0)
@@ -35,11 +34,14 @@ class GraphConvolution(nn.Module):
             out = torch.bmm(adj, seq_fts)
         if self.bias is not None:
             out += self.bias
-        return self.act(out)   # GCN 等同于原RCA中的 nn.Linear ?
+        
+        return self.act(out)
+    
     def __repr__(self):
         return self.__class__.__name__ + ' (' \
             + str(self.in_features) + ' -> ' \
             + str(self.out_features) + ')'
+
 
 class Encoder(nn.Module):#一层编码器
     def __init__(self, nfeat, nhid, dropout):

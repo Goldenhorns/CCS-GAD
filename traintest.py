@@ -204,26 +204,26 @@ class Solver_graphRCA:
         multi_round_ano_score = np.zeros((self.testround, self.nb_nodes))
         with tqdm(total=self.testround,ncols=100,colour='blue') as pbar:
             pbar.set_description('Testing')
-        for round in range(self.testround):  # ensemble score over 100 stochastic feedforward
-            with torch.no_grad():
-                all_idx = list(range(self.nb_nodes))
-                random.shuffle(all_idx)
-                for batch_idx in tqdm(range(self.batch_num),leave=False,ncols=100,colour='green'):# testing data loader has n_test batchsize, if it is image data, need change this part
-                    
-                    _, idx = self.getidx(all_idx, batch_idx)
+            for round in range(self.testround):  # ensemble score over 100 stochastic feedforward
+                with torch.no_grad():
+                    all_idx = list(range(self.nb_nodes))
+                    random.shuffle(all_idx)
+                    for batch_idx in tqdm(range(self.batch_num),leave=False,ncols=100,colour='green'):# testing data loader has n_test batchsize, if it is image data, need change this part
+                        
+                        _, idx = self.getidx(all_idx, batch_idx)
 
-                    ba,bf,lbl=self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
+                        ba,bf,lbl=self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
 
-                    A_hat1, x_hat1,re1, \
-                    A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)
+                        A_hat1, x_hat1,re1, \
+                        A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)
 
-                    error1= self.loss_func(ba, A_hat1, bf, x_hat1, 0.5)
-                    error2= self.loss_func(ba, A_hat2, bf, x_hat2, 0.5)
-                    error=error1+error2
-                    error = error.mean(dim=1)
-                    error = error.data.cpu().numpy()
-                    multi_round_ano_score[round, idx]=error
-                pbar.update(1)
+                        error1= self.loss_func(ba, A_hat1, bf, x_hat1, 0.5)
+                        error2= self.loss_func(ba, A_hat2, bf, x_hat2, 0.5)
+                        error=error1+error2
+                        error = error.mean(dim=1)
+                        error = error.data.cpu().numpy()
+                        multi_round_ano_score[round, idx]=error
+                    pbar.update(1)
                 
         y=self.dataset.truth
         ano_score_final = np.mean(multi_round_ano_score, axis=0)
