@@ -38,29 +38,6 @@ class RealDataset():
         else:
             split_line()
             print("Using CPU")
-    
-    def get_babf(self,subgraph_size,idx,negsamp_ratio):
-        #所需数据准备
-        ba = []
-        bf = []
-        cur_batch_size = len(idx)
-        dgl_graph = adj_to_dgl_graph(self.adj)       
-        subgraphs = generate_rwr_subgraph(dgl_graph, subgraph_size)
-
-        lbl = torch.unsqueeze(torch.cat((torch.ones(cur_batch_size), torch.zeros(cur_batch_size * negsamp_ratio))), 1)
-        
-        for i in idx:
-            cur_adj = self.norm_adj[:, subgraphs[i], :][:, :, subgraphs[i]]
-            cur_feat = self.norm_feat[:, subgraphs[i], :]
-            ba.append(cur_adj)
-            bf.append(cur_feat)
-
-        ba = torch.cat(ba)
-        ba =  ba.cuda()
-        bf = torch.cat(bf)
-        bf =  bf.cuda()
-
-        return ba,bf,lbl
 
     def get_babf_raw(self,subgraph_size,idx,negsamp_ratio):
         #所需数据准备

@@ -3,44 +3,36 @@ import os
 import random
 import torch.utils.data as data
 import numpy as np
+import torch.nn as nn
 from tqdm import tqdm
 import argparse
 from ourmodel import AE
 from data_process import RealDataset
-'''
-come true train and test
-'''
+
 class Solver_graphRCA:
     def __init__(
         self,
         data_name,
-        hidden_dim,  # number of hidden neurons in RCA
-        seed,  # random seed
-        learning_rate,  # learning rate
-        batch_size,  #  batchsize
-        max_epochs,  #  training epochs
+        hidden_dim,
+        seed,
+        learning_rate,
+        batch_size,  
+        max_epochs,  
         coteaching=1.0,  #  whether selects sample based on loss value
-        oe=0.0,  # how much we overestimate the ground-truth anomaly ratio
+        oe=0.0, 
         subgraph_size=4,
         negsamp_round=1,
         dropout=0.3,
         testround=100,
         balance=0.5
-        #missing_ratio=0.0,  # missing ratio in the data
     ):
-        # Data loader
-        # read data here
-        print("=========================Init=========================")
+        print(30*'='+'Init'+30*'=')
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         use_cuda = torch.cuda.is_available()
-
         self.data_name = data_name
         self.device = torch.device("cuda" if use_cuda else "cpu")
-        #self.missing_ratio = missing_ratio
-        self.result_path = "./results/{}/".format(data_name)
-
         self.learning_rate = learning_rate
         self.seed = seed
         self.max_epochs = max_epochs
@@ -54,18 +46,17 @@ class Solver_graphRCA:
         self.batch_size=batch_size
         self.hidden_dim = hidden_dim
         self.testround=testround
-
         self.dataset = RealDataset(data_name)
         self.nb_nodes=self.dataset.nb_nodes
         self.data_anomaly_ratio = self.dataset.truth.sum()/self.dataset.nb_nodes + oe
         self.data_normaly_ratio = 1 - self.data_anomaly_ratio
         self.batch_num = self.nb_nodes // self.batch_size + 1
         self.input_dim = self.dataset.ft_size
-
         n_sample = self.nb_nodes
         self.n_train = n_sample 
         self.n_test = n_sample
 
+        self.result_path = "./results/{}/".format(data_name)
         print(
             "{}| Data dimension: {}| Data noise ratio:{}".format(
                 self.data_name.upper(), self.input_dim, '%0.4f'%self.data_anomaly_ratio
@@ -81,6 +72,11 @@ class Solver_graphRCA:
         self.build_model()
         self.print_network()
 
+        if torch.cuda.is_available():
+            self.b_xent = nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor([self.negsamp_round]).cuda())
+        else:
+            self.b_xent = nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor([self.negsamp_round]))
+
     def build_model(self):
         self.ae = AE(
             feat_size=self.input_dim, hidden_size=self.hidden_dim,
@@ -94,19 +90,15 @@ class Solver_graphRCA:
             num_params += p.numel()
         print("The number of parameters: {}".format(num_params))
 
-    def loss_func(self,  adj, A_hat, attrs, X_hat, alpha):
-    # Attribute reconstruction loss
-        diff_attribute = torch.pow(X_hat - attrs, 2)
-        attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 2))
-        attribute_cost = torch.mean(attribute_reconstruction_errors)
+    def loss_func(self, adj, A_hat):
         # structure reconstruction loss
         diff_structure = torch.pow(A_hat - adj, 2)
         structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 2))
-        structure_cost = torch.mean(structure_reconstruction_errors)
-        cost =  alpha * attribute_reconstruction_errors + (1-alpha) * structure_reconstruction_errors
-        return cost
+        error = torch.mean(structure_reconstruction_errors)
+    
+        return error
 
-    def getidx(self, all_idx, batch_idx):
+    def get_idx(self, all_idx, batch_idx):
         is_final_batch = (batch_idx == (self.batch_num - 1))
         if not is_final_batch:
             idx = all_idx[batch_idx * self.batch_size: (batch_idx + 1) * self. batch_size]                            
@@ -116,28 +108,22 @@ class Solver_graphRCA:
         return cur_batch_size,idx
 
     def train(self):
-        print("======================Train MODE======================")
+        print(27*'='+'Train Mode'+'='*27)
         optimizer = torch.optim.Adam(self.ae.parameters(), lr=self.learning_rate)
         self.ae.eval()
-#region
-        #loss_mse = torch.nn.MSELoss(reduction='none')
-        #if self.data_name == 'optdigits':
-            #loss_mse = torch.nn.BCELoss(reduction='none')
-#endregion
         with tqdm(total=self.max_epochs,ncols=100,colour='blue') as pbar:
                 pbar.set_description('Training')
                 for epoch in range(self.max_epochs):  
                     loss_full_batch = torch.zeros((self.nb_nodes,1))
                     if torch.cuda.is_available():
                         loss_full_batch = loss_full_batch.cuda()
-                    
                     all_idx = list(range(self.dataset.nb_nodes))
                     random.shuffle(all_idx)
                     total_loss = 0.
-
+                    
                     for batch_idx in tqdm(range(self.batch_num),leave=False,ncols=100,colour='green'):
-                        _, idx = self.getidx(all_idx, batch_idx)
-                        ba, bf, _= self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
+                        cur_batch_size, idx = self.get_idx(all_idx, batch_idx)
+                        ba, bf, lbl= self.dataset.get_babf_raw(self.subgraph_size,idx,self.negsamp_round)
                         
                         n = bf.shape[0]
                         n_selected = int(n * (1-self.beta))
@@ -150,34 +136,41 @@ class Solver_graphRCA:
                         optimizer.zero_grad()
                         with torch.no_grad():
                             self.ae.eval()
-                            A_hat1, x_hat1,re1, \
-                            A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)##后续添加ret
+                            A_hat1, ret1, \
+                            A_hat2, ret2 = self.ae(bf,ba,bf,ba)
+                            
+                            loss_all_1 = self.b_xent(ret1, lbl)
+                            loss_all_2 = self.b_xent(ret2, lbl)
 
-                            error1= self.loss_func(ba, A_hat1, bf, x_hat1, self.balance)
-                            error2= self.loss_func(ba, A_hat2, bf, x_hat2, self.balance)
-                            error1 = error1.sum(dim=1)
-                            error2 = error2.sum(dim=1)
+                            loss1=-(loss_all_1[:cur_batch_size]-loss_all_1[cur_batch_size:])
+                            loss2=-(loss_all_2[:cur_batch_size]-loss_all_2[cur_batch_size:])
 
-                            _, index1 = torch.sort(error1) #index为原来的数据下标
-                            _, index2 = torch.sort(error2)
+                            error1=self.loss_func(ba[:,:-1,:-1],A_hat1)
+                            error2=self.loss_func(ba[:,:-1,:-1],A_hat2)
+
+                            loss1=torch.squeeze(loss1,1)+torch.squeeze(error1,1)
+                            loss2=torch.squeeze(loss2,1)+torch.squeeze(error2,1)
+
+                            _, index1 = torch.sort(loss1) 
+                            _, index2 = torch.sort(loss2)
 
                             index1 = index1[:n_selected]
                             index2 = index2[:n_selected]
-    
+
                             ba1=ba[index2,:,:]
                             bf1=bf[index2,:,:]
                             
                             ba2=ba[index1,:,:]
                             bf2=bf[index1,:,:]
-
-                        
-
+                            lbl = torch.unsqueeze(torch.cat((torch.ones(n_selected), torch.zeros(n_selected * self.negsamp_round))), 1)
+                            lbl=lbl.cuda()
                         self.ae.train()
-                        A_hat1, x_hat1,re1, \
-                            A_hat2, x_hat2,ret2 = self.ae(bf1,ba1,bf2,ba2)
 
-                        loss = self.loss_func(ba1, A_hat1, bf1, x_hat1, self.balance) \
-                        + self.loss_func(ba2, A_hat2, bf2, x_hat2, self.balance)
+                        A_hat1,ret1, \
+                            A_hat2,ret2 = self.ae(bf1,ba1,bf2,ba2)
+
+                        loss = self.b_xent(ret1, lbl) \
+                        + self.b_xent(ret2, lbl)
 
                         loss = loss.sum()
                         mean_loss=loss/self.nb_nodes
@@ -194,12 +187,8 @@ class Solver_graphRCA:
                         )
 
     def test(self):
-        print("======================TEST MODE======================")
+        print(27*'='+'Test  Mode'+'='*27)
         self.ae.train()
-
-        #mse_loss = torch.nn.MSELoss(reduction='none')
-        #if self.data_name == 'optdigits':
-            #mse_loss = torch.nn.BCELoss(reduction='none')
         
         multi_round_ano_score = np.zeros((self.testround, self.nb_nodes))
         with tqdm(total=self.testround,ncols=100,colour='blue') as pbar:
@@ -210,35 +199,47 @@ class Solver_graphRCA:
                     random.shuffle(all_idx)
                     for batch_idx in tqdm(range(self.batch_num),leave=False,ncols=100,colour='green'):# testing data loader has n_test batchsize, if it is image data, need change this part
                         
-                        _, idx = self.getidx(all_idx, batch_idx)
+                        cur_batch_size, idx = self.get_idx(all_idx, batch_idx)
 
-                        ba,bf,lbl=self.dataset.get_babf(self.subgraph_size,idx,self.negsamp_round)
+                        ba,bf,lbl=self.dataset.get_babf_raw(self.subgraph_size,idx,self.negsamp_round)
 
-                        A_hat1, x_hat1,re1, \
-                        A_hat2, x_hat2,ret2 = self.ae(bf,ba,bf,ba)
+                        A_hat1,ret1, \
+                        A_hat2,ret2 = self.ae(bf,ba,bf,ba)
 
-                        error1= self.loss_func(ba, A_hat1, bf, x_hat1, 0.5)
-                        error2= self.loss_func(ba, A_hat2, bf, x_hat2, 0.5)
-                        error=error1+error2
-                        error = error.mean(dim=1)
-                        error = error.data.cpu().numpy()
-                        multi_round_ano_score[round, idx]=error
+                        loss1= self.b_xent(ret1, lbl)
+                        loss2= self.b_xent(ret2, lbl)
+
+                        error1=self.loss_func(ba[:,:-1,:-1],A_hat1)
+                        error2=self.loss_func(ba[:,:-1,:-1],A_hat2)
+
+                        loss1=-(loss1[:cur_batch_size]-loss1[cur_batch_size:])
+                        loss2=-(loss2[:cur_batch_size]-loss2[cur_batch_size:])
+
+                        loss=loss1+loss2+error1+error2
+                        loss = loss.mean(dim=1)
+                        loss = loss.data.cpu().numpy()
+                        multi_round_ano_score[round, idx]=loss
                     pbar.update(1)
-                
-        y=self.dataset.truth
-        ano_score_final = np.mean(multi_round_ano_score, axis=0)
+        max_auc=0
         from sklearn.metrics import (
             precision_recall_fscore_support as prf,
             accuracy_score,
             roc_auc_score,
         )
+        y=self.dataset.truth
+        for round in range(round):
+            max_auc = max(max_auc,roc_auc_score(y, -multi_round_ano_score[round,:]))
+        print(max_auc)
+        
+        ano_score_final = np.mean(multi_round_ano_score, axis=0)
+ 
 
         thresh = np.percentile(ano_score_final, self.data_anomaly_ratio * 100)
         print("Threshold :", thresh)
         
         pred = (ano_score_final > thresh).astype(int)
     
-        auc = roc_auc_score(y, ano_score_final)
+        auc = roc_auc_score(y, -ano_score_final)
         accuracy = accuracy_score(y, pred)
         precision, recall, f_score, support = prf(y, pred, average="binary")
 

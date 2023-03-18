@@ -54,18 +54,6 @@ class Encoder(nn.Module):#一层编码器
         # x = F.dropout(x, self.dropout, training=self.training)
         return x
 
-class Attribute_Decoder(nn.Module):#一层属性解码
-    def __init__(self, nfeat, nhid, dropout):
-        super(Attribute_Decoder, self).__init__()
-        self.gc1 = GraphConvolution(nhid, nfeat)
-        self.dropout = dropout
-
-    def forward(self, x, adj):
-        x = F.relu(self.gc1(x, adj))
-        #x = F.dropout(x, self.dropout, training=self.training)
-
-        return x
-
 class Structure_Decoder(nn.Module):#结构解码
     def __init__(self, nhid, dropout):
         super(Structure_Decoder, self).__init__()
@@ -120,27 +108,23 @@ class Discriminator(nn.Module):#求距离
 class SM(nn.Module):
     def __init__(self, feat_size, hidden_size,negsamp_round, dropout):
         super(SM, self).__init__()
-        
         self.encoder = Encoder(feat_size, hidden_size, dropout)
-        self.attr_decoder = Attribute_Decoder(feat_size, hidden_size, dropout)
         self.struct_decoder = Structure_Decoder(hidden_size, dropout)
         self.read = AvgReadout()
         self.disc = Discriminator(hidden_size, negsamp_round)
     def forward(self, x, adj):
-        # encode
         x = self.encoder(x, adj)
-        # decode feature matrix
-        x_hat = self.attr_decoder(x, adj)
-        # decode adjacency matrix
-        struct_reconstructed = self.struct_decoder(x, adj)
-        # return reconstructed matrices
+        x_raw=x[:,:-1,:]
+        x_raw[:,-1,:]=x[:,-1,:]
+        adj_raw=adj[:,:-1,:-1]
+        A_hat = self.struct_decoder(x_raw, adj_raw)
 
         #disc
         c = self.read(x[:,: -1,:])
         h_mv = x[:,-1,:]
         ret = self.disc(c, h_mv)
         
-        return struct_reconstructed, x_hat,ret
+        return A_hat,ret
 
 class AE(nn.Module):
     def __init__(self, feat_size, hidden_size,negsamp_round, dropout):
@@ -148,6 +132,6 @@ class AE(nn.Module):
         self.ende1=SM(feat_size, hidden_size,negsamp_round, dropout)
         self.ende2=SM(feat_size, hidden_size,negsamp_round, dropout)
     def forward(self,  x1, adj1, x2, adj2):
-        struct_reconstructed1, x_hat1,re1=self.ende1(x1, adj1)
-        struct_reconstructed2, x_hat2,ret2=self.ende2(x2, adj2)
-        return struct_reconstructed1, x_hat1,re1,struct_reconstructed2, x_hat2,ret2
+        A_hat1,ret1=self.ende1(x1, adj1)
+        A_hat2,ret2=self.ende2(x2, adj2)
+        return A_hat1,ret1,A_hat2,ret2

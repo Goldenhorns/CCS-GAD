@@ -10,19 +10,19 @@ from data_process import *
 from traintest  import *
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Graph RCA")
-    parser.add_argument("--seed", type=int, default=28, required=False)
+    parser.add_argument("--seed", type=int, default=1, required=False)
     parser.add_argument("--data", type=str, default="cora", required=False)
-    parser.add_argument("--max_epochs", type=int, default=50, required=False)
+    parser.add_argument("--max_epochs", type=int, default=100, required=False)
     parser.add_argument("--hidden_dim", type=int, default=120, required=False)
-    parser.add_argument("--batch_size", type=int, default=200, required=False)
+    parser.add_argument("--batch_size", type=int, default=300, required=False)
     parser.add_argument("--oe", type=float, default=0.0, required=False)
     parser.add_argument("--training_ratio", type=float, default=0.6, required=False)
-    parser.add_argument("--learning_rate", type=float, default=3e-4, required=False)
+    parser.add_argument("--learning_rate", type=float, default=1e-3, required=False)
     parser.add_argument("--coteaching", type=float, default=1.0, required=False)
-    
-    parser.add_argument("--negsamp_round", type=int, default=100, required=False)
+
+    parser.add_argument("--negsamp_round", type=int, default=1, required=False)
     parser.add_argument("--subgraphsize", type=int, default=4, required=False)
-    parser.add_argument("--dropout", type=float, default=0.3, required=False)
+    parser.add_argument("--dropout", type=float, default=0, required=False)
     parser.add_argument("--testround", type=int, default=100, required=False)
     parser.add_argument("--balance", type=float, default=0.5, required=False)
     args = parser.parse_args()
