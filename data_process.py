@@ -7,11 +7,7 @@ import torch.nn as nn
 import scipy.io as sio
 from utils import *
 from sklearn.preprocessing import MinMaxScaler
-'''
-读取数据，处理成->(节点-子图对）
-dataset=["cora","ACM","Flickr","pubmed","citeseer","BlogCatalog"]
-**Flickr换成minmax试试**
-'''
+
 class RealDataset():
     def __init__(self,dataset):
         feat, truth, adj=load_data(dataset)
@@ -20,13 +16,10 @@ class RealDataset():
         self.truth=truth #标签
         self.norm_adj=preprocess_adj(adj)
         self.norm_feat=preprocess_features(feat)
-        #数据属性
         self.nb_nodes = self.norm_feat.shape[0]
         self.ft_size = self.norm_feat.shape[1]
-        #转换成tensorfloat
         self.norm_feat = torch.FloatTensor(self.norm_feat[np.newaxis])
         self.norm_adj = torch.FloatTensor(self.norm_adj[np.newaxis])
-        
 
     def docuda(self):
         if torch.cuda.is_available():

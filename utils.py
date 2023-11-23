@@ -8,7 +8,7 @@ import dgl
 
 def split_line():
     print('-'*50)
-
+ 
 def random_adjacency_matrix(n):   
     matrix = [[random.randint(0, 2) for i in range(n)] for j in range(n)]
 
@@ -44,6 +44,21 @@ def load_data(dataset):
     truth = data_mat['Label']
     truth = np.squeeze(np.array(truth))
     return feat, truth, adj
+
+def load_anomaly_detection_dataset(dataset):
+    
+    data_mat = sio.loadmat(f'dataset/{dataset}.mat')
+    adj = data_mat['Network']
+    feat = data_mat['Attributes']
+    truth = data_mat['Label']
+    truth = truth.flatten()
+
+    adj_norm = normalize_adj(adj + sp.eye(adj.shape[0]))
+    adj_norm = adj_norm.toarray()
+    adj = adj + sp.eye(adj.shape[0])
+    adj = adj.toarray()
+    feat = feat.toarray()
+    return adj_norm, feat, truth, adj
 
 def sparse_to_tuple(sparse_mx, insert_batch=False):
     """Convert sparse matrix to tuple representation."""
@@ -101,6 +116,21 @@ def generate_rwr_subgraph(dgl_graph, subgraph_size):#输出子图
         subv[i] = subv[i][:reduced_size]
         subv[i].append(i)
     return subv
+
+def loss_func(adj, A_hat, attrs, X_hat, alpha):
+    # Attribute reconstruction loss
+    diff_attribute = torch.pow(X_hat - attrs, 2)
+    attribute_reconstruction_errors = torch.sqrt(torch.sum(diff_attribute, 1))
+    attribute_cost = torch.mean(attribute_reconstruction_errors)
+
+    # structure reconstruction loss
+    diff_structure = torch.pow(A_hat - adj, 2)
+    structure_reconstruction_errors = torch.sqrt(torch.sum(diff_structure, 1))
+    structure_cost = torch.mean(structure_reconstruction_errors)
+
+    cost =  alpha * attribute_reconstruction_errors + (1-alpha) * structure_reconstruction_errors
+
+    return cost, structure_cost, attribute_cost
 
 def preprocess_features(features):#特征矩阵归一化(可以换)
     """Row-normalize feature matrix and convert to tuple representation"""
